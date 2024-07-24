@@ -16,7 +16,7 @@ def parse_atoms(atoms_list: list[str]):
         xpos = float(xpos) # (x, y, z) 坐标
         ypos = float(ypos)
         zpos = float(zpos)
-        dic[idx] = (xpos, ypos, zpos)
+        dic[idx] = [xpos, ypos, zpos] # 这里应该是 list 而不是 tuple
     return dic
 
 
@@ -121,7 +121,9 @@ def compress_file(input_path: str, output_path: str):
 
 
 if __name__ == "__main__":
-    compress_file("../data/data.random_knot_widened_L1000_K0_melt_limit_1", "tmp.bin")
+    DIRNOW      = os.path.dirname(os.path.abspath(__file__))
+    SAMPLE_FILE = os.path.join(DIRNOW, "data.random_knot_widened_L1000_K0_melt_limit_1")
+    compress_file(SAMPLE_FILE, "tmp.bin")
     # lst = read_file("../data/data.random_knot_widened_L1000_K0_melt_limit_1")
     # info, atoms, bonds = content_check(lst)
     # if info != "":

@@ -3,6 +3,7 @@
 # 每个文件压缩前 200KB
 # 每个文件压缩后  24KB
 import os
+import sys
 
 
 
@@ -37,7 +38,7 @@ def split_content(content: list[str]):
     part_list = []
     part_now  = []
     for line in content:
-        if line.startswith("Atoms") or line.startswith("Bonds"):
+        if line.startswith("Atoms") or line.startswith("Bonds") or line.startswith("Velocities") or line.startswith("Angles"):
             # append data and clear part_now
             if part_now != []:
                 part_list.append(part_now)
@@ -46,25 +47,15 @@ def split_content(content: list[str]):
             part_now.append(line)
     if part_now != []: # 处理最后一个 block 的内容
         part_list.append(part_now)
-    return part_list
-
-
-
-# 检查原子信息
-def atom_content_check(atom_content: list[str]):
-    atom_front_line = atom_content[0]
-    if not atom_front_line.startswith("Atoms"):
-        return "atom_front_line_error"
-    return ""
-
-
-
-# 检查化学键信息
-def bond_content_check(bond_content: list[str]):
-    bond_front_line = bond_content[0]
-    if not bond_front_line.startswith("Bonds"):
-        return "bond_front_line_error"
-    return ""
+    head = part_list[0]
+    atom = []
+    bond = []
+    for part in part_list:
+        if part[0].startswith("Atoms"):
+            atom = part
+        if part[0].startswith("Bonds"):
+            bond = part
+    return head, atom, bond
 
 
 
@@ -73,8 +64,12 @@ def get_data_body(part_content: list[str]):
     lines = []
     for i in range(1, len(part_content)):
         line = part_content[i].split()
-        if len(line) == 4:
+        if len(line) == 4: # new datas
             lines.append(line)
+        elif len(line) == 9: # old datas
+            lines.append([line[0]] + line[3:6])
+        else:
+            assert False
     return lines
 
 
@@ -89,14 +84,6 @@ def content_check(content: list): # 分离头部数据以及其他数据
         return header_info, None, None
     if len(atom_content) != len(bond_content): # 检查配对是否正确
         return "length_not_match", None, None
-    if not atom_content[0].startswith("Atoms"): # 试图交换
-        atom_content, bond_content = bond_content, atom_content
-    atom_info = atom_content_check(atom_content) # 检查原子信息
-    if atom_info != "":
-        return atom_info, None, None
-    bond_info = bond_content_check(bond_content) # 检查化学键信息
-    if bond_info != "":
-        return bond_info, None, None
     atom_data = get_data_body(atom_content) # 拆分数据部分
     bond_data = get_data_body(bond_content) 
     if len(atom_data) != len(bond_data):
@@ -106,6 +93,8 @@ def content_check(content: list): # 分离头部数据以及其他数据
 
 
 if __name__ == "__main__": # debug
-    lst = read_file("data/data.random_knot_widened_L1000_K0_melt_limit_1")
+    DIRNOW      = os.path.dirname(os.path.abspath(__file__))
+    SAMPLE_FILE = os.path.join(DIRNOW, "data.random_knot_widened_L1000_K0_melt_limit_1")
+    lst = read_file(SAMPLE_FILE)
     info, atoms, bonds = content_check(lst)
     print(len(atoms))
