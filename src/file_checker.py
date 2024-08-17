@@ -3,9 +3,8 @@
 # 每个文件压缩前 200KB
 # 每个文件压缩后  24KB
 import os
-import sys
 
-
+IGNORE_FIRST_LINE_CHECK = True
 
 # 读入一个文件，并删除其中的所有空行
 def read_file(filename):
@@ -23,9 +22,10 @@ def read_file(filename):
 # header_info = ontent_check(content)
 # header_info： 错误信息
 def header_check(content: list[str]):
-    front_line = content[0] # 检查首行正确性
-    if not front_line.startswith("LAMMPS data file via write_data, version 12"):
-        return "front_line_error"
+    if not IGNORE_FIRST_LINE_CHECK: # 跳过首行检查
+        front_line = content[0]     # 检查首行正确性
+        if not front_line.startswith("LAMMPS data file via write_data, version 12"):
+            return "front_line_error"
     data_size_line = content[1] # 检查数据量行的正确性
     if not data_size_line.endswith(" atoms"):
         return "data_size_line_error"
