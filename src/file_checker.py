@@ -1,100 +1,105 @@
-# 检查指定的文件，是否符合我们对应化所数据的格式假设
-# 预计有 5e7 个文件
-# 每个文件压缩前 200KB
-# 每个文件压缩后  24KB
-import os
+"""Read and validate the LAMMPS data-file subset used by this project."""
+
+from pathlib import Path
+import re
+
 
 IGNORE_FIRST_LINE_CHECK = True
-
-# 读入一个文件，并删除其中的所有空行
-def read_file(filename):
-    assert os.path.isfile(filename)
-    lines = []
-    for line in open(filename):
-        line = line.strip()
-        if line != "":
-            lines.append(line)
-    return lines
+_SECTION = re.compile(r"^(Atoms|Bonds|Velocities|Angles)\b")
 
 
+def read_file(filename: str) -> list[str]:
+    path = Path(filename)
+    if not path.is_file():
+        raise FileNotFoundError(path)
+    return [
+        line.strip()
+        for line in path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
 
-# 检查头部数据正确性
-# header_info = ontent_check(content)
-# header_info： 错误信息
-def header_check(content: list[str]):
-    if not IGNORE_FIRST_LINE_CHECK: # 跳过首行检查
-        front_line = content[0]     # 检查首行正确性
-        if not front_line.startswith("LAMMPS data file via write_data, version 12"):
-            return "front_line_error"
-    data_size_line = content[1] # 检查数据量行的正确性
-    if not data_size_line.endswith(" atoms"):
+
+def _declared_count(header: list[str], kind: str) -> int | None:
+    pattern = re.compile(rf"^(\d+)\s+{re.escape(kind)}$")
+    for line in header:
+        match = pattern.fullmatch(line)
+        if match:
+            return int(match.group(1))
+    return None
+
+
+def header_check(content: list[str]) -> str:
+    if not content:
+        return "empty_header"
+    if not IGNORE_FIRST_LINE_CHECK and not content[0].startswith(
+        "LAMMPS data file via write_data, version 12"
+    ):
+        return "front_line_error"
+    if _declared_count(content, "atoms") is None:
         return "data_size_line_error"
-    return "" # 没有任何错误
+    return ""
 
 
-
-# 分割数据，将数据分给为三部分
-def split_content(content: list[str]):
-    part_list = []
-    part_now  = []
+def split_content(content: list[str]) -> tuple[list[str], list[str], list[str]]:
+    sections: list[list[str]] = []
+    current: list[str] = []
     for line in content:
-        if line.startswith("Atoms") or line.startswith("Bonds") or line.startswith("Velocities") or line.startswith("Angles"):
-            # append data and clear part_now
-            if part_now != []:
-                part_list.append(part_now)
-            part_now = [line]
+        if _SECTION.match(line):
+            if current:
+                sections.append(current)
+            current = [line]
         else:
-            part_now.append(line)
-    if part_now != []: # 处理最后一个 block 的内容
-        part_list.append(part_now)
-    head = part_list[0]
-    atom = []
-    bond = []
-    for part in part_list:
-        if part[0].startswith("Atoms"):
-            atom = part
-        if part[0].startswith("Bonds"):
-            bond = part
-    return head, atom, bond
+            current.append(line)
+    if current:
+        sections.append(current)
+
+    header = sections[0] if sections else []
+    atoms = next((section for section in sections if section[0].startswith("Atoms")), [])
+    bonds = next((section for section in sections if section[0].startswith("Bonds")), [])
+    return header, atoms, bonds
 
 
-
-# 删除第一行，然后取其他行的内容为 list of list
-def get_data_body(part_content: list[str]):
-    lines = []
-    for i in range(1, len(part_content)):
-        line = part_content[i].split()
-        if len(line) == 4: # new datas
-            lines.append(line)
-        elif len(line) == 9: # old datas
-            lines.append([line[0]] + line[3:6])
+def get_data_body(part_content: list[str]) -> list[list[str]]:
+    if not part_content:
+        raise ValueError("required LAMMPS section is missing")
+    rows: list[list[str]] = []
+    for raw_line in part_content[1:]:
+        fields = raw_line.split()
+        if len(fields) == 4:
+            rows.append(fields)
+        elif len(fields) == 9:
+            rows.append([fields[0], *fields[3:6]])
         else:
-            assert False
-    return lines
+            raise ValueError(f"unsupported row shape: {raw_line!r}")
+    return rows
 
 
+def content_check(content: list[str]):
+    """Return `(error, atoms, bonds)` while preserving the legacy API."""
 
-# content 为 read_file 函数的返回结果
-# 函数返回错误信息
-# 如果返回空字符串说明格式正确
-def content_check(content: list): # 分离头部数据以及其他数据
-    header_content, atom_content, bond_content = split_content(content)
-    header_info = header_check(header_content) # 检查头部信息
-    if header_info != "":
-        return header_info, None, None
-    if len(atom_content) != len(bond_content): # 检查配对是否正确
-        return "length_not_match", None, None
-    atom_data = get_data_body(atom_content) # 拆分数据部分
-    bond_data = get_data_body(bond_content) 
-    if len(atom_data) != len(bond_data):
-        return "body_length_not_match", None, None
-    return "", atom_data, bond_data # 没有遇到错误
+    try:
+        header, atom_section, bond_section = split_content(content)
+        error = header_check(header)
+        if error:
+            return error, None, None
+        atoms = get_data_body(atom_section)
+        bonds = get_data_body(bond_section)
+        declared_atoms = _declared_count(header, "atoms")
+        declared_bonds = _declared_count(header, "bonds")
+        if declared_atoms != len(atoms):
+            return "atom_count_mismatch", None, None
+        if declared_bonds is not None and declared_bonds != len(bonds):
+            return "bond_count_mismatch", None, None
+        if len(atoms) != len(bonds):
+            return "length_not_match", None, None
+        return "", atoms, bonds
+    except ValueError as exc:
+        return f"format_error: {exc}", None, None
 
 
-
-if __name__ == "__main__": # debug
-    DIRNOW      = os.path.dirname(os.path.abspath(__file__))
-    SAMPLE_FILE = os.path.join(DIRNOW, "data.random_knot_widened_L1000_K0_melt_limit_1")
-    lst = read_file(SAMPLE_FILE)
-    info, atoms, bonds = content_check(lst)
+if __name__ == "__main__":
+    sample = Path(__file__).resolve().parent / "data.random_knot_widened_L1000_K0_melt_limit_1"
+    info, atoms, _ = content_check(read_file(str(sample)))
+    if info:
+        raise ValueError(info)
     print(len(atoms))
