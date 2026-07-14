@@ -41,3 +41,16 @@ committed 1000-point sample and run regression tests with:
 python src/che_data_to_spatial_coord.py
 python -m unittest discover -s tests -v
 ```
+
+## Citation
+
+If you use this repository in academic work, please cite it as:
+
+```bibtex
+@software{topologicalknotindexer_che_data_to_spatial_coord,
+  author = {{TopologicalKnotIndexer contributors}},
+  title = {{che\_data\_to\_spatial\_coord}},
+  year = {2026},
+  url = {https://github.com/TopologicalKnotIndexer/che_data_to_spatial_coord}
+}
+```
